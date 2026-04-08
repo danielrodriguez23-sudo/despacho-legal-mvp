@@ -24,8 +24,12 @@ const menuItems = [
 export default function Sidebar() {
   return (
     <div className="w-64 bg-gray-900 text-white flex flex-col">
-      <div className="p-4 border-b border-gray-800">
-        <h1 className="text-xl font-bold">Rojas & Corrales Abogados</h1>
+      <div className="p-4 border-b border-gray-800 bg-white flex items-center justify-center">
+        <img
+          src="/Logo.jpg"
+          alt="Emilio Rojas Abogados"
+          className="h-14 w-auto object-contain"
+        />
       </div>
       
       <nav className="flex-1 p-4">

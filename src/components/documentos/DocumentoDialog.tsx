@@ -35,11 +35,17 @@ const BUCKET = "Documentos";
 const MAX_SIZE = 10 * 1024 * 1024; // 10 MB
 const ALLOWED_EXT = ["pdf", "docx", "doc", "jpg", "jpeg", "png"];
 
+interface CarpetaOption {
+  id: string;
+  nombre: string;
+}
+
 const emptyForm = () => ({
   nombre: "",
   categoria: "otro" as Categoria,
   cliente_id: "",
   expediente_id: "",
+  carpeta_id: "",
   etiquetas: "",
   notas: "",
   descripcion: "",
@@ -63,6 +69,7 @@ export default function DocumentoDialog({
   const [formData, setFormData] = useState(emptyForm());
   const [clientes, setClientes] = useState<ClienteOption[]>([]);
   const [expedientes, setExpedientes] = useState<ExpedienteOption[]>([]);
+  const [carpetas, setCarpetas] = useState<CarpetaOption[]>([]);
   const [file, setFile] = useState<File | null>(null);
   const [loading, setLoading] = useState(false);
   const [progress, setProgress] = useState(0);
@@ -105,6 +112,7 @@ export default function DocumentoDialog({
               categoria: (data.categoria as Categoria) ?? "otro",
               cliente_id: data.cliente_id ?? "",
               expediente_id: data.expediente_id ?? "",
+              carpeta_id: data.carpeta_id ?? "",
               etiquetas: Array.isArray(data.etiquetas)
                 ? data.etiquetas.join(", ")
                 : "",
@@ -121,6 +129,20 @@ export default function DocumentoDialog({
       });
     }
   }, [isOpen, documentoId, defaultExpedienteId, defaultClienteId]);
+
+  // Cargar carpetas cuando cambia el expediente seleccionado
+  useEffect(() => {
+    if (!formData.expediente_id) {
+      setCarpetas([]);
+      return;
+    }
+    supabase
+      .from("carpetas_documentos")
+      .select("id, nombre")
+      .eq("expediente_id", formData.expediente_id)
+      .order("created_at", { ascending: true })
+      .then(({ data }) => setCarpetas((data ?? []) as CarpetaOption[]));
+  }, [formData.expediente_id]);
 
   if (!isOpen) return null;
 
@@ -178,6 +200,10 @@ export default function DocumentoDialog({
         categoria: formData.categoria,
         cliente_id: formData.cliente_id || null,
         expediente_id: formData.expediente_id || null,
+        carpeta_id:
+          formData.expediente_id && formData.carpeta_id
+            ? formData.carpeta_id
+            : null,
         etiquetas: etiquetasArr.length > 0 ? etiquetasArr : null,
         notas: formData.notas.trim() || null,
         descripcion: formData.descripcion.trim() || null,
@@ -331,7 +357,10 @@ export default function DocumentoDialog({
               </label>
               <select
                 value={formData.expediente_id}
-                onChange={(e) => set("expediente_id", e.target.value)}
+                onChange={(e) => {
+                  set("expediente_id", e.target.value);
+                  set("carpeta_id", "");
+                }}
                 className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
               >
                 <option value="">-- Sin expediente --</option>
@@ -343,6 +372,31 @@ export default function DocumentoDialog({
               </select>
             </div>
           </div>
+
+          {formData.expediente_id && (
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-2">
+                Carpeta del expediente
+              </label>
+              <select
+                value={formData.carpeta_id}
+                onChange={(e) => set("carpeta_id", e.target.value)}
+                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                disabled={carpetas.length === 0}
+              >
+                <option value="">
+                  {carpetas.length === 0
+                    ? "-- El expediente no tiene carpetas --"
+                    : "-- Sin carpeta --"}
+                </option>
+                {carpetas.map((c) => (
+                  <option key={c.id} value={c.id}>
+                    {c.nombre}
+                  </option>
+                ))}
+              </select>
+            </div>
+          )}
 
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-2">

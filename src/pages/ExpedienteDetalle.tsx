@@ -1,74 +1,9 @@
 import { useEffect, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
-import {
-  ArrowLeft,
-  Pencil,
-  Trash2,
-  Plus,
-  Download,
-  FileText,
-  FileImage,
-  File as FileIcon,
-} from "lucide-react";
+import { ArrowLeft, Pencil, Trash2 } from "lucide-react";
 import { supabase } from "../lib/supabase";
 import ExpedienteDialog from "../components/expedientes/ExpedienteDialog";
-import DocumentoDialog from "../components/documentos/DocumentoDialog";
-
-const BUCKET = "Documentos";
-
-type CategoriaDoc =
-  | "contrato"
-  | "escrito"
-  | "sentencia"
-  | "poder"
-  | "factura"
-  | "otro";
-
-interface DocumentoItem {
-  id: string;
-  nombre: string;
-  storage_path: string;
-  tipo_mime: string | null;
-  tamanio_bytes: number | null;
-  categoria: CategoriaDoc | null;
-  etiquetas: string[] | null;
-  created_at: string | null;
-}
-
-const categoriaBadgeDoc: Record<CategoriaDoc, string> = {
-  contrato: "bg-blue-100 text-blue-700",
-  escrito: "bg-green-100 text-green-700",
-  sentencia: "bg-red-100 text-red-700",
-  poder: "bg-purple-100 text-purple-700",
-  factura: "bg-orange-100 text-orange-700",
-  otro: "bg-gray-100 text-gray-700",
-};
-
-const categoriaLabelDoc: Record<CategoriaDoc, string> = {
-  contrato: "Contrato",
-  escrito: "Escrito",
-  sentencia: "Sentencia",
-  poder: "Poder",
-  factura: "Factura",
-  otro: "Otro",
-};
-
-const formatBytes = (bytes: number | null) => {
-  if (bytes == null) return "";
-  if (bytes < 1024) return `${bytes} B`;
-  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(0)} KB`;
-  return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
-};
-
-const getFileIcon = (mime: string | null, name: string) => {
-  const m = (mime ?? "").toLowerCase();
-  const ext = name.split(".").pop()?.toLowerCase() ?? "";
-  if (m.startsWith("image/") || ["jpg", "jpeg", "png"].includes(ext))
-    return FileImage;
-  if (m.includes("pdf") || ext === "pdf") return FileText;
-  if (m.includes("word") || ["doc", "docx"].includes(ext)) return FileText;
-  return FileIcon;
-};
+import CarpetasDocumentos from "../components/CarpetasDocumentos";
 
 type Estado = "abierto" | "cerrado" | "archivado";
 
@@ -143,45 +78,6 @@ export default function ExpedienteDetalle() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [dialogOpen, setDialogOpen] = useState(false);
-  const [documentos, setDocumentos] = useState<DocumentoItem[]>([]);
-  const [docsLoading, setDocsLoading] = useState(false);
-  const [docDialogOpen, setDocDialogOpen] = useState(false);
-
-  const fetchDocumentos = async () => {
-    if (!id) return;
-    setDocsLoading(true);
-    const { data } = await supabase
-      .from("documentos")
-      .select(
-        "id, nombre, storage_path, tipo_mime, tamanio_bytes, categoria, etiquetas, created_at"
-      )
-      .eq("expediente_id", id)
-      .order("created_at", { ascending: false });
-    setDocumentos((data ?? []) as DocumentoItem[]);
-    setDocsLoading(false);
-  };
-
-  const handleDownloadDoc = async (doc: DocumentoItem) => {
-    const { data, error } = await supabase.storage
-      .from(BUCKET)
-      .createSignedUrl(doc.storage_path, 60);
-    if (error || !data) {
-      alert(`Error al generar enlace: ${error?.message ?? "desconocido"}`);
-      return;
-    }
-    window.open(data.signedUrl, "_blank", "noopener,noreferrer");
-  };
-
-  const handleDeleteDoc = async (doc: DocumentoItem) => {
-    if (!confirm(`¿Eliminar el documento "${doc.nombre}"?`)) return;
-    await supabase.storage.from(BUCKET).remove([doc.storage_path]);
-    const { error } = await supabase.from("documentos").delete().eq("id", doc.id);
-    if (error) {
-      alert(`Error al eliminar: ${error.message}`);
-      return;
-    }
-    fetchDocumentos();
-  };
 
   const fetchExpediente = async () => {
     if (!id) return;
@@ -210,7 +106,6 @@ export default function ExpedienteDetalle() {
 
   useEffect(() => {
     fetchExpediente();
-    fetchDocumentos();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [id]);
 
@@ -309,7 +204,7 @@ export default function ExpedienteDetalle() {
         </div>
       </div>
 
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 mb-6">
         <div className="lg:col-span-2 space-y-6">
           <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-6">
             <h2 className="text-sm font-semibold text-gray-900 mb-4 uppercase tracking-wide">
@@ -347,97 +242,6 @@ export default function ExpedienteDetalle() {
               </p>
             ) : (
               <p className="text-sm text-gray-400 italic">Sin descripción</p>
-            )}
-          </div>
-
-          <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-6">
-            <div className="flex items-center justify-between mb-4">
-              <h2 className="text-sm font-semibold text-gray-900 uppercase tracking-wide">
-                Documentos ({documentos.length})
-              </h2>
-              <button
-                onClick={() => setDocDialogOpen(true)}
-                className="flex items-center gap-1.5 text-sm bg-blue-600 text-white px-3 py-1.5 rounded-lg hover:bg-blue-700 font-medium"
-              >
-                <Plus className="w-4 h-4" />
-                Subir documento
-              </button>
-            </div>
-            {docsLoading ? (
-              <p className="text-sm text-gray-500">Cargando documentos...</p>
-            ) : documentos.length === 0 ? (
-              <div className="text-center py-8">
-                <FileText className="w-10 h-10 mx-auto text-gray-300 mb-2" />
-                <p className="text-sm text-gray-500">
-                  Aún no hay documentos asociados a este expediente.
-                </p>
-              </div>
-            ) : (
-              <ul className="divide-y divide-gray-100">
-                {documentos.map((doc) => {
-                  const Icon = getFileIcon(doc.tipo_mime, doc.nombre);
-                  const cat = doc.categoria ?? "otro";
-                  return (
-                    <li
-                      key={doc.id}
-                      className="py-3 flex items-start gap-3 hover:bg-gray-50 -mx-2 px-2 rounded-lg cursor-pointer"
-                      onClick={() => handleDownloadDoc(doc)}
-                    >
-                      <Icon className="w-5 h-5 text-gray-400 shrink-0 mt-0.5" />
-                      <div className="flex-1 min-w-0">
-                        <div className="flex items-center gap-2 flex-wrap">
-                          <span className="font-medium text-gray-900 truncate">
-                            {doc.nombre}
-                          </span>
-                          <span
-                            className={`inline-flex px-2 py-0.5 rounded-full text-[10px] font-medium ${categoriaBadgeDoc[cat]}`}
-                          >
-                            {categoriaLabelDoc[cat]}
-                          </span>
-                        </div>
-                        <div className="text-xs text-gray-500 mt-0.5">
-                          {formatBytes(doc.tamanio_bytes)}
-                          {doc.created_at && ` · ${formatDate(doc.created_at)}`}
-                        </div>
-                        {doc.etiquetas && doc.etiquetas.length > 0 && (
-                          <div className="flex flex-wrap gap-1 mt-1">
-                            {doc.etiquetas.map((t, i) => (
-                              <span
-                                key={i}
-                                className="text-[10px] bg-gray-100 text-gray-600 px-1.5 py-0.5 rounded"
-                              >
-                                {t}
-                              </span>
-                            ))}
-                          </div>
-                        )}
-                      </div>
-                      <div className="flex items-center gap-1 shrink-0">
-                        <button
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            handleDownloadDoc(doc);
-                          }}
-                          className="p-1.5 rounded-md hover:bg-green-50 text-green-600"
-                          title="Ver / Descargar"
-                        >
-                          <Download className="w-4 h-4" />
-                        </button>
-                        <button
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            handleDeleteDoc(doc);
-                          }}
-                          className="p-1.5 rounded-md hover:bg-red-50 text-red-600"
-                          title="Eliminar"
-                        >
-                          <Trash2 className="w-4 h-4" />
-                        </button>
-                      </div>
-                    </li>
-                  );
-                })}
-              </ul>
             )}
           </div>
         </div>
@@ -497,19 +301,15 @@ export default function ExpedienteDetalle() {
         </div>
       </div>
 
+      <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-6">
+        <CarpetasDocumentos expedienteId={expediente.id} />
+      </div>
+
       <ExpedienteDialog
         isOpen={dialogOpen}
         expedienteId={expediente.id}
         onClose={() => setDialogOpen(false)}
         onSaved={fetchExpediente}
-      />
-
-      <DocumentoDialog
-        isOpen={docDialogOpen}
-        onClose={() => setDocDialogOpen(false)}
-        onSaved={fetchDocumentos}
-        defaultExpedienteId={expediente.id}
-        defaultClienteId={expediente.clientes?.id}
       />
     </div>
   );
