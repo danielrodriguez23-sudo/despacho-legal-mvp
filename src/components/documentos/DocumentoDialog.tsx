@@ -17,6 +17,7 @@ interface DocumentoDialogProps {
   documentoId?: string;
   defaultExpedienteId?: string;
   defaultClienteId?: string;
+  initialFile?: File | null;
 }
 
 interface ClienteOption {
@@ -64,6 +65,7 @@ export default function DocumentoDialog({
   documentoId,
   defaultExpedienteId,
   defaultClienteId,
+  initialFile,
 }: DocumentoDialogProps) {
   const { user } = useAuth();
   const [formData, setFormData] = useState(emptyForm());
@@ -80,7 +82,7 @@ export default function DocumentoDialog({
   useEffect(() => {
     if (!isOpen) return;
     setError("");
-    setFile(null);
+    setFile(initialFile ?? null);
     setProgress(0);
 
     supabase
@@ -124,11 +126,12 @@ export default function DocumentoDialog({
     } else {
       setFormData({
         ...emptyForm(),
+        nombre: initialFile ? initialFile.name.replace(/\.[^.]+$/, "") : "",
         expediente_id: defaultExpedienteId ?? "",
         cliente_id: defaultClienteId ?? "",
       });
     }
-  }, [isOpen, documentoId, defaultExpedienteId, defaultClienteId]);
+  }, [isOpen, documentoId, defaultExpedienteId, defaultClienteId, initialFile]);
 
   // Cargar carpetas cuando cambia el expediente seleccionado
   useEffect(() => {

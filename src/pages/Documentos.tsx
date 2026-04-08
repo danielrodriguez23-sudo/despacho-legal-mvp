@@ -105,6 +105,8 @@ export default function Documentos() {
 
   const [dialogOpen, setDialogOpen] = useState(false);
   const [editingId, setEditingId] = useState<string | undefined>(undefined);
+  const [droppedFile, setDroppedFile] = useState<File | null>(null);
+  const [isDragging, setIsDragging] = useState(false);
 
   const fetchDocumentos = async () => {
     setLoading(true);
@@ -180,8 +182,52 @@ export default function Documentos() {
 
   const handleNew = () => {
     setEditingId(undefined);
+    setDroppedFile(null);
     setDialogOpen(true);
   };
+
+  // Drag & drop a nivel de página
+  useEffect(() => {
+    let depth = 0;
+    const onDragEnter = (e: DragEvent) => {
+      if (!e.dataTransfer?.types.includes("Files")) return;
+      e.preventDefault();
+      depth++;
+      setIsDragging(true);
+    };
+    const onDragOver = (e: DragEvent) => {
+      if (!e.dataTransfer?.types.includes("Files")) return;
+      e.preventDefault();
+    };
+    const onDragLeave = (e: DragEvent) => {
+      e.preventDefault();
+      depth--;
+      if (depth <= 0) {
+        depth = 0;
+        setIsDragging(false);
+      }
+    };
+    const onDrop = (e: DragEvent) => {
+      e.preventDefault();
+      depth = 0;
+      setIsDragging(false);
+      const file = e.dataTransfer?.files?.[0];
+      if (!file) return;
+      setEditingId(undefined);
+      setDroppedFile(file);
+      setDialogOpen(true);
+    };
+    window.addEventListener("dragenter", onDragEnter);
+    window.addEventListener("dragover", onDragOver);
+    window.addEventListener("dragleave", onDragLeave);
+    window.addEventListener("drop", onDrop);
+    return () => {
+      window.removeEventListener("dragenter", onDragEnter);
+      window.removeEventListener("dragover", onDragOver);
+      window.removeEventListener("dragleave", onDragLeave);
+      window.removeEventListener("drop", onDrop);
+    };
+  }, []);
 
   const handleEdit = (id: string) => {
     setEditingId(id);
@@ -444,9 +490,27 @@ export default function Documentos() {
       <DocumentoDialog
         isOpen={dialogOpen}
         documentoId={editingId}
-        onClose={() => setDialogOpen(false)}
+        initialFile={droppedFile}
+        onClose={() => {
+          setDialogOpen(false);
+          setDroppedFile(null);
+        }}
         onSaved={fetchDocumentos}
       />
+
+      {isDragging && (
+        <div className="fixed inset-0 z-50 bg-blue-600/20 backdrop-blur-sm flex items-center justify-center pointer-events-none">
+          <div className="bg-white border-4 border-dashed border-blue-600 rounded-2xl px-12 py-10 text-center shadow-2xl">
+            <FileText className="w-14 h-14 mx-auto text-blue-600 mb-3" />
+            <p className="text-lg font-semibold text-gray-900">
+              Suelta el archivo para subirlo
+            </p>
+            <p className="text-sm text-gray-500 mt-1">
+              PDF, DOCX, DOC, JPG o PNG (máx. 10 MB)
+            </p>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
