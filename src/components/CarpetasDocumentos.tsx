@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
-import { supabase } from '@/lib/supabase';
-import { Folder, Plus, Search, Upload, File, Trash2, Edit2, X, FolderUp } from 'lucide-react';
+import { supabase } from '../lib/supabase';
+import { Folder, Plus, Search, Upload, File, Trash2, Edit2, FolderUp } from 'lucide-react';
 
 interface Carpeta {
   id: string;
@@ -24,13 +24,6 @@ export default function CarpetasDocumentos({ expedienteId }: { expedienteId: str
   const [documentos, setDocumentos] = useState<Documento[]>([]);
   const [searchTerm, setSearchTerm] = useState('');
   const [selectedCarpeta, setSelectedCarpeta] = useState<string | null>(null);
-
-  // Selecciona automáticamente la primera carpeta cuando se cargan
-  useEffect(() => {
-    if (!selectedCarpeta && carpetas.length > 0) {
-      setSelectedCarpeta(carpetas[0].id);
-    }
-  }, [carpetas, selectedCarpeta]);
   const [showNewCarpeta, setShowNewCarpeta] = useState(false);
   const [newCarpetaNombre, setNewCarpetaNombre] = useState('');
   const [uploading, setUploading] = useState(false);
@@ -42,13 +35,19 @@ export default function CarpetasDocumentos({ expedienteId }: { expedienteId: str
     loadDocumentos();
   }, [expedienteId]);
 
+  // Auto seleccionar primera carpeta
+  useEffect(() => {
+    if (!selectedCarpeta && carpetas.length > 0) {
+      setSelectedCarpeta(carpetas[0].id);
+    }
+  }, [carpetas, selectedCarpeta]);
+
   const loadCarpetas = async () => {
     const { data, error } = await supabase
       .from('carpetas_documentos')
       .select('*')
       .eq('expediente_id', expedienteId)
       .order('created_at', { ascending: true });
-
     if (error) {
       console.error('Error loading carpetas:', error);
       return;
@@ -62,7 +61,6 @@ export default function CarpetasDocumentos({ expedienteId }: { expedienteId: str
       .select('*')
       .eq('expediente_id', expedienteId)
       .order('created_at', { ascending: false });
-
     if (error) {
       console.error('Error loading documentos:', error);
       return;
@@ -72,20 +70,14 @@ export default function CarpetasDocumentos({ expedienteId }: { expedienteId: str
 
   const createCarpeta = async () => {
     if (!newCarpetaNombre.trim()) return;
-
     const { error } = await supabase
       .from('carpetas_documentos')
-      .insert({
-        expediente_id: expedienteId,
-        nombre: newCarpetaNombre.trim(),
-      });
-
+      .insert({ expediente_id: expedienteId, nombre: newCarpetaNombre.trim() });
     if (error) {
       console.error('Error creating carpeta:', error);
       alert('Error al crear carpeta');
       return;
     }
-
     setNewCarpetaNombre('');
     setShowNewCarpeta(false);
     loadCarpetas();
@@ -93,18 +85,15 @@ export default function CarpetasDocumentos({ expedienteId }: { expedienteId: str
 
   const updateCarpeta = async (id: string) => {
     if (!editNombre.trim()) return;
-
     const { error } = await supabase
       .from('carpetas_documentos')
       .update({ nombre: editNombre.trim() })
       .eq('id', id);
-
     if (error) {
       console.error('Error updating carpeta:', error);
       alert('Error al actualizar carpeta');
       return;
     }
-
     setEditingCarpeta(null);
     setEditNombre('');
     loadCarpetas();
@@ -113,26 +102,22 @@ export default function CarpetasDocumentos({ expedienteId }: { expedienteId: str
   const deleteCarpeta = async (id: string) => {
     if (!confirm('¿Eliminar esta carpeta y TODOS los documentos que contiene? Esta acción no se puede deshacer.')) return;
 
-    // 1. Obtener documentos de la carpeta
     const { data: docs, error: fetchErr } = await supabase
       .from('documentos')
       .select('id, storage_path')
       .eq('carpeta_id', id);
-
     if (fetchErr) {
       console.error('Error obteniendo documentos:', fetchErr);
       alert('Error al eliminar carpeta');
       return;
     }
 
-    // 2. Borrar archivos del storage
     const paths = (docs ?? []).map((d) => d.storage_path).filter(Boolean) as string[];
     if (paths.length > 0) {
       const { error: storageErr } = await supabase.storage.from('Documentos').remove(paths);
       if (storageErr) console.error('Error borrando del storage:', storageErr);
     }
 
-    // 3. Borrar filas de documentos
     if ((docs ?? []).length > 0) {
       const { error: docsErr } = await supabase
         .from('documentos')
@@ -145,12 +130,10 @@ export default function CarpetasDocumentos({ expedienteId }: { expedienteId: str
       }
     }
 
-    // 4. Borrar la carpeta
     const { error } = await supabase
       .from('carpetas_documentos')
       .delete()
       .eq('id', id);
-
     if (error) {
       console.error('Error deleting carpeta:', error);
       alert('Error al eliminar carpeta');
@@ -167,29 +150,23 @@ export default function CarpetasDocumentos({ expedienteId }: { expedienteId: str
     if (!file) return;
 
     setUploading(true);
-
     try {
-      const fileExt = file.name.split('.').pop();
       const fileName = `${Date.now()}_${file.name}`;
       const filePath = `${expedienteId}/${fileName}`;
 
       const { error: uploadError } = await supabase.storage
         .from('Documentos')
         .upload(filePath, file);
-
       if (uploadError) throw uploadError;
 
-      const { error: dbError } = await supabase
-        .from('documentos')
-        .insert({
-          expediente_id: expedienteId,
-          carpeta_id: carpetaId,
-          nombre: file.name,
-          storage_path: filePath,
-          tipo_mime: file.type || null,
-          tamanio_bytes: file.size,
-        });
-
+      const { error: dbError } = await supabase.from('documentos').insert({
+        expediente_id: expedienteId,
+        carpeta_id: carpetaId,
+        nombre: file.name,
+        storage_path: filePath,
+        tipo_mime: file.type || null,
+        tamanio_bytes: file.size,
+      });
       if (dbError) throw dbError;
 
       loadDocumentos();
@@ -208,7 +185,6 @@ export default function CarpetasDocumentos({ expedienteId }: { expedienteId: str
 
     setUploading(true);
     try {
-      // Agrupar archivos por carpeta de primer nivel (webkitRelativePath)
       const grupos = new Map<string, File[]>();
       for (const f of Array.from(files)) {
         const rel = (f as any).webkitRelativePath as string | undefined;
@@ -221,7 +197,6 @@ export default function CarpetasDocumentos({ expedienteId }: { expedienteId: str
       let errCount = 0;
 
       for (const [nombreCarpeta, archivos] of grupos.entries()) {
-        // Crear la carpeta
         const { data: carpetaData, error: carpetaErr } = await supabase
           .from('carpetas_documentos')
           .insert({ expediente_id: expedienteId, nombre: nombreCarpeta })
@@ -275,18 +250,16 @@ export default function CarpetasDocumentos({ expedienteId }: { expedienteId: str
 
   const deleteDocumento = async (id: string) => {
     if (!confirm('¿Eliminar este documento?')) return;
-
-    const { error } = await supabase
-      .from('documentos')
-      .delete()
-      .eq('id', id);
-
+    const doc = documentos.find((d) => d.id === id);
+    if (doc?.storage_path) {
+      await supabase.storage.from('Documentos').remove([doc.storage_path]);
+    }
+    const { error } = await supabase.from('documentos').delete().eq('id', id);
     if (error) {
       console.error('Error deleting documento:', error);
       alert('Error al eliminar documento');
       return;
     }
-
     loadDocumentos();
   };
 
@@ -314,40 +287,29 @@ export default function CarpetasDocumentos({ expedienteId }: { expedienteId: str
       .from('documentos')
       .update({ carpeta_id: newCarpetaId })
       .eq('id', docId);
-
     if (error) {
       console.error('Error moving documento:', error);
       return;
     }
-
     loadDocumentos();
   };
 
-  // Filtrar documentos
   const filteredDocumentos = documentos.filter((doc) => {
-    const matchesSearch = 
-      doc.nombre.toLowerCase().includes(searchTerm.toLowerCase());
-    
-    const matchesCarpeta = 
-      selectedCarpeta === null || 
-      doc.carpeta_id === selectedCarpeta;
-
+    const matchesSearch = doc.nombre.toLowerCase().includes(searchTerm.toLowerCase());
+    const matchesCarpeta = selectedCarpeta === null || doc.carpeta_id === selectedCarpeta;
     return matchesSearch && matchesCarpeta;
   });
 
-  // Filtrar carpetas por búsqueda
   const filteredCarpetas = carpetas.filter((carpeta) =>
     carpeta.nombre.toLowerCase().includes(searchTerm.toLowerCase())
   );
 
-  // Contar documentos por carpeta
   const getDocCount = (carpetaId: string) => {
     return documentos.filter((doc) => doc.carpeta_id === carpetaId).length;
   };
 
   return (
     <div className="space-y-6">
-      {/* Barra de búsqueda */}
       <div className="flex gap-4 items-center">
         <div className="flex-1 relative">
           <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 h-5 w-5" />
@@ -382,7 +344,6 @@ export default function CarpetasDocumentos({ expedienteId }: { expedienteId: str
         </button>
       </div>
 
-      {/* Modal nueva carpeta */}
       {showNewCarpeta && (
         <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
           <div className="bg-white rounded-lg p-6 w-96">
@@ -417,7 +378,6 @@ export default function CarpetasDocumentos({ expedienteId }: { expedienteId: str
         </div>
       )}
 
-      {/* Lista de carpetas */}
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
         {filteredCarpetas.length === 0 && (
           <div className="col-span-full text-center py-8 text-gray-500 border-2 border-dashed border-gray-200 rounded-lg">
@@ -425,7 +385,6 @@ export default function CarpetasDocumentos({ expedienteId }: { expedienteId: str
           </div>
         )}
 
-        {/* Carpetas creadas */}
         {filteredCarpetas.map((carpeta) => (
           <div
             key={carpeta.id}
@@ -493,7 +452,6 @@ export default function CarpetasDocumentos({ expedienteId }: { expedienteId: str
         ))}
       </div>
 
-      {/* Lista de documentos */}
       <div className="bg-white rounded-lg border border-gray-200">
         <div className="px-6 py-4 border-b border-gray-200">
           <h3 className="font-semibold text-gray-900">
