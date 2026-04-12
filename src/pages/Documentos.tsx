@@ -11,6 +11,7 @@ import {
 } from "lucide-react";
 import { supabase } from "../lib/supabase";
 import DocumentoDialog from "../components/documentos/DocumentoDialog";
+import DocumentoViewer from "../components/documentos/DocumentoViewer";
 
 type Categoria =
   | "contrato"
@@ -107,6 +108,7 @@ export default function Documentos() {
   const [editingId, setEditingId] = useState<string | undefined>(undefined);
   const [droppedFile, setDroppedFile] = useState<File | null>(null);
   const [isDragging, setIsDragging] = useState(false);
+  const [viewingDoc, setViewingDoc] = useState<DocumentoRow | null>(null);
 
   const fetchDocumentos = async () => {
     setLoading(true);
@@ -186,45 +188,38 @@ export default function Documentos() {
     setDialogOpen(true);
   };
 
-  // Drag & drop a nivel de página
   useEffect(() => {
     let depth = 0;
-    const onDragEnter = (e: DragEvent) => {
-      if (!e.dataTransfer?.types.includes("Files")) return;
+    const onOver = (e: DragEvent) => e.preventDefault();
+    const onEnter = (e: DragEvent) => {
       e.preventDefault();
       depth++;
-      setIsDragging(true);
+      if (e.dataTransfer?.types.includes("Files")) setIsDragging(true);
     };
-    const onDragOver = (e: DragEvent) => {
-      if (!e.dataTransfer?.types.includes("Files")) return;
-      e.preventDefault();
-    };
-    const onDragLeave = (e: DragEvent) => {
+    const onLeave = (e: DragEvent) => {
       e.preventDefault();
       depth--;
-      if (depth <= 0) {
-        depth = 0;
-        setIsDragging(false);
-      }
+      if (depth <= 0) { depth = 0; setIsDragging(false); }
     };
     const onDrop = (e: DragEvent) => {
       e.preventDefault();
       depth = 0;
       setIsDragging(false);
       const file = e.dataTransfer?.files?.[0];
-      if (!file) return;
-      setEditingId(undefined);
-      setDroppedFile(file);
-      setDialogOpen(true);
+      if (file) {
+        setEditingId(undefined);
+        setDroppedFile(file);
+        setDialogOpen(true);
+      }
     };
-    window.addEventListener("dragenter", onDragEnter);
-    window.addEventListener("dragover", onDragOver);
-    window.addEventListener("dragleave", onDragLeave);
+    window.addEventListener("dragover", onOver);
+    window.addEventListener("dragenter", onEnter);
+    window.addEventListener("dragleave", onLeave);
     window.addEventListener("drop", onDrop);
     return () => {
-      window.removeEventListener("dragenter", onDragEnter);
-      window.removeEventListener("dragover", onDragOver);
-      window.removeEventListener("dragleave", onDragLeave);
+      window.removeEventListener("dragover", onOver);
+      window.removeEventListener("dragenter", onEnter);
+      window.removeEventListener("dragleave", onLeave);
       window.removeEventListener("drop", onDrop);
     };
   }, []);
@@ -267,7 +262,7 @@ export default function Documentos() {
   };
 
   return (
-    <div className="p-6">
+    <div className="p-6 min-h-screen relative">
       <div className="flex items-center justify-between mb-6">
         <div>
           <h1 className="text-2xl font-bold text-gray-900">Documentos</h1>
@@ -387,7 +382,7 @@ export default function Documentos() {
                   return (
                     <tr
                       key={r.id}
-                      onClick={() => handleDownload(r)}
+                      onClick={() => setViewingDoc(r)}
                       className="cursor-pointer hover:bg-gray-50"
                     >
                       <td className="px-4 py-3">
@@ -497,6 +492,16 @@ export default function Documentos() {
         }}
         onSaved={fetchDocumentos}
       />
+
+      {viewingDoc && (
+        <DocumentoViewer
+          isOpen={true}
+          onClose={() => setViewingDoc(null)}
+          nombre={viewingDoc.nombre}
+          storagePath={viewingDoc.storage_path}
+          tipoMime={viewingDoc.tipo_mime}
+        />
+      )}
 
       {isDragging && (
         <div className="fixed inset-0 z-50 bg-blue-600/20 backdrop-blur-sm flex items-center justify-center pointer-events-none">

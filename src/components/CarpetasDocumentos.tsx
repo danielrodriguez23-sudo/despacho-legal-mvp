@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react';
 import { supabase } from '../lib/supabase';
 import { Folder, Plus, Search, Upload, File, Trash2, Edit2, FolderUp } from 'lucide-react';
+import DocumentoViewer from './documentos/DocumentoViewer';
 
 interface Carpeta {
   id: string;
@@ -29,18 +30,15 @@ export default function CarpetasDocumentos({ expedienteId }: { expedienteId: str
   const [uploading, setUploading] = useState(false);
   const [editingCarpeta, setEditingCarpeta] = useState<string | null>(null);
   const [editNombre, setEditNombre] = useState('');
+  const [viewingDoc, setViewingDoc] = useState<Documento | null>(null);
+  const [isDragging, setIsDragging] = useState(false);
 
   useEffect(() => {
     loadCarpetas();
     loadDocumentos();
   }, [expedienteId]);
 
-  // Auto seleccionar primera carpeta
-  useEffect(() => {
-    if (!selectedCarpeta && carpetas.length > 0) {
-      setSelectedCarpeta(carpetas[0].id);
-    }
-  }, [carpetas, selectedCarpeta]);
+  // selectedCarpeta = null muestra todos los documentos
 
   const loadCarpetas = async () => {
     const { data, error } = await supabase
@@ -263,25 +261,6 @@ export default function CarpetasDocumentos({ expedienteId }: { expedienteId: str
     loadDocumentos();
   };
 
-  const openDocumento = async (doc: Documento) => {
-    if (doc.storage_path) {
-      const { data, error } = await supabase.storage
-        .from('Documentos')
-        .createSignedUrl(doc.storage_path, 60);
-      if (error || !data) {
-        alert(`Error al abrir documento: ${error?.message ?? 'desconocido'}`);
-        return;
-      }
-      window.open(data.signedUrl, '_blank', 'noopener,noreferrer');
-      return;
-    }
-    if (doc.url) {
-      window.open(doc.url, '_blank', 'noopener,noreferrer');
-      return;
-    }
-    alert('Este documento no tiene archivo asociado.');
-  };
-
   const moveDocumento = async (docId: string, newCarpetaId: string | null) => {
     const { error } = await supabase
       .from('documentos')
@@ -308,8 +287,172 @@ export default function CarpetasDocumentos({ expedienteId }: { expedienteId: str
     return documentos.filter((doc) => doc.carpeta_id === carpetaId).length;
   };
 
+  // Lee recursivamente archivos de un FileSystemEntry
+  const readAllFiles = (entry: FileSystemEntry): Promise<{ file: File; folderName: string }[]> => {
+    const topName = entry.name;
+    const collect = (e: FileSystemEntry): Promise<File[]> => {
+      if (e.isFile) {
+        return new Promise((res) => (e as FileSystemFileEntry).file((f) => res([f])));
+      }
+      if (e.isDirectory) {
+        const reader = (e as FileSystemDirectoryEntry).createReader();
+        return new Promise((res) => {
+          reader.readEntries(async (entries) => {
+            const all = await Promise.all(entries.map(collect));
+            res(all.flat());
+          });
+        });
+      }
+      return Promise.resolve([]);
+    };
+    return collect(entry).then((files) => files.map((f) => ({ file: f, folderName: topName })));
+  };
+
+  const processDroppedItems = async (entries: FileSystemEntry[], rawFiles: File[]) => {
+    if (uploading) return;
+    setUploading(true);
+    let okCount = 0;
+    let errCount = 0;
+
+    try {
+      const hasFolders = entries.some((e) => e.isDirectory);
+
+      if (hasFolders && entries.length > 0) {
+        // Hay carpetas: usar entries API
+        for (const entry of entries) {
+          if (entry.isDirectory) {
+            const items = await readAllFiles(entry);
+            const { data: carpetaData, error: carpetaErr } = await supabase
+              .from('carpetas_documentos')
+              .insert({ expediente_id: expedienteId, nombre: entry.name })
+              .select('id')
+              .single();
+            if (carpetaErr || !carpetaData) { errCount += items.length; continue; }
+
+            for (const { file } of items) {
+              try {
+                const filePath = `${expedienteId}/${Date.now()}_${Math.random().toString(36).slice(2)}_${file.name}`;
+                const { error: upErr } = await supabase.storage.from('Documentos').upload(filePath, file);
+                if (upErr) throw upErr;
+                const { error: dbErr } = await supabase.from('documentos').insert({
+                  expediente_id: expedienteId, carpeta_id: carpetaData.id,
+                  nombre: file.name, storage_path: filePath,
+                  tipo_mime: file.type || null, tamanio_bytes: file.size,
+                });
+                if (dbErr) throw dbErr;
+                okCount++;
+              } catch { errCount++; }
+            }
+          } else {
+            // Archivo suelto junto a carpetas
+            try {
+              const file = await new Promise<File>((res) =>
+                (entry as FileSystemFileEntry).file((f) => res(f))
+              );
+              const filePath = `${expedienteId}/${Date.now()}_${file.name}`;
+              const { error: upErr } = await supabase.storage.from('Documentos').upload(filePath, file);
+              if (upErr) throw upErr;
+              const { error: dbErr } = await supabase.from('documentos').insert({
+                expediente_id: expedienteId, carpeta_id: selectedCarpeta,
+                nombre: file.name, storage_path: filePath,
+                tipo_mime: file.type || null, tamanio_bytes: file.size,
+              });
+              if (dbErr) throw dbErr;
+              okCount++;
+            } catch { errCount++; }
+          }
+        }
+      } else {
+        // Solo archivos sueltos: usar rawFiles (más fiable)
+        const filesToUpload = rawFiles.length > 0 ? rawFiles : [];
+        for (const file of filesToUpload) {
+          try {
+            const filePath = `${expedienteId}/${Date.now()}_${Math.random().toString(36).slice(2)}_${file.name}`;
+            const { error: upErr } = await supabase.storage.from('Documentos').upload(filePath, file);
+            if (upErr) throw upErr;
+            const { error: dbErr } = await supabase.from('documentos').insert({
+              expediente_id: expedienteId, carpeta_id: selectedCarpeta,
+              nombre: file.name, storage_path: filePath,
+              tipo_mime: file.type || null, tamanio_bytes: file.size,
+            });
+            if (dbErr) throw dbErr;
+            okCount++;
+          } catch { errCount++; }
+        }
+      }
+
+      await loadCarpetas();
+      await loadDocumentos();
+      if (okCount > 0 || errCount > 0) {
+        alert(`Subida completada: ${okCount} archivos${errCount ? `, ${errCount} con error` : ''}`);
+      }
+    } finally {
+      setUploading(false);
+    }
+  };
+
+  useEffect(() => {
+    let depth = 0;
+    const onOver = (e: DragEvent) => e.preventDefault();
+    const onEnter = (e: DragEvent) => {
+      e.preventDefault();
+      depth++;
+      if (e.dataTransfer?.types.includes("Files")) setIsDragging(true);
+    };
+    const onLeave = (e: DragEvent) => {
+      e.preventDefault();
+      depth--;
+      if (depth <= 0) { depth = 0; setIsDragging(false); }
+    };
+    const onDrop = (e: DragEvent) => {
+      e.preventDefault();
+      depth = 0;
+      setIsDragging(false);
+
+      // Capturar entries y files síncronamente
+      const entries: FileSystemEntry[] = [];
+      const rawFiles: File[] = [];
+      if (e.dataTransfer?.items) {
+        for (let i = 0; i < e.dataTransfer.items.length; i++) {
+          const entry = e.dataTransfer.items[i].webkitGetAsEntry?.();
+          if (entry) entries.push(entry);
+        }
+      }
+      if (e.dataTransfer?.files) {
+        for (let i = 0; i < e.dataTransfer.files.length; i++) {
+          rawFiles.push(e.dataTransfer.files[i]);
+        }
+      }
+      if (entries.length === 0 && rawFiles.length === 0) return;
+      processDroppedItems(entries, rawFiles);
+    };
+    window.addEventListener("dragover", onOver);
+    window.addEventListener("dragenter", onEnter);
+    window.addEventListener("dragleave", onLeave);
+    window.addEventListener("drop", onDrop);
+    return () => {
+      window.removeEventListener("dragover", onOver);
+      window.removeEventListener("dragenter", onEnter);
+      window.removeEventListener("dragleave", onLeave);
+      window.removeEventListener("drop", onDrop);
+    };
+  });
+
   return (
-    <div className="space-y-6">
+    <div className="space-y-6 relative">
+      {isDragging && (
+        <div className="absolute inset-0 z-40 bg-blue-600/20 backdrop-blur-sm rounded-lg flex items-center justify-center pointer-events-none">
+          <div className="bg-white border-4 border-dashed border-blue-600 rounded-2xl px-12 py-10 text-center shadow-2xl">
+            <FolderUp className="w-14 h-14 mx-auto text-blue-600 mb-3" />
+            <p className="text-lg font-semibold text-gray-900">
+              Suelta archivos o carpetas
+            </p>
+            <p className="text-sm text-gray-500 mt-1">
+              Carpetas se crean automáticamente · Archivos sueltos van al expediente
+            </p>
+          </div>
+        </div>
+      )}
       <div className="flex gap-4 items-center">
         <div className="flex-1 relative">
           <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 h-5 w-5" />
@@ -379,9 +522,27 @@ export default function CarpetasDocumentos({ expedienteId }: { expedienteId: str
       )}
 
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
+        {/* Botón "Todos los documentos" */}
+        <div
+          onClick={() => setSelectedCarpeta(null)}
+          className={`p-4 border-2 rounded-lg cursor-pointer transition-all hover:shadow-lg ${
+            selectedCarpeta === null
+              ? 'border-blue-500 bg-blue-50'
+              : 'border-gray-200 hover:border-blue-300'
+          }`}
+        >
+          <div className="flex items-center gap-3">
+            <File className="h-8 w-8 text-gray-500 flex-shrink-0" />
+            <div>
+              <h3 className="font-medium text-gray-900">Todos</h3>
+              <p className="text-sm text-gray-500">{documentos.length} documentos</p>
+            </div>
+          </div>
+        </div>
+
         {filteredCarpetas.length === 0 && (
           <div className="col-span-full text-center py-8 text-gray-500 border-2 border-dashed border-gray-200 rounded-lg">
-            Aún no hay carpetas. Crea la primera para empezar a organizar documentos.
+            Arrastra carpetas o archivos aquí, o crea una carpeta manualmente.
           </div>
         )}
 
@@ -457,7 +618,7 @@ export default function CarpetasDocumentos({ expedienteId }: { expedienteId: str
           <h3 className="font-semibold text-gray-900">
             {selectedCarpeta
               ? `Documentos en: ${carpetas.find((c) => c.id === selectedCarpeta)?.nombre ?? '—'}`
-              : 'Selecciona una carpeta'}
+              : 'Todos los documentos'}
           </h3>
           <p className="text-sm text-gray-500 mt-1">
             {filteredDocumentos.length} documentos
@@ -480,7 +641,7 @@ export default function CarpetasDocumentos({ expedienteId }: { expedienteId: str
                   <div className="min-w-0 flex-1">
                     <button
                       type="button"
-                      onClick={() => openDocumento(doc)}
+                      onClick={() => setViewingDoc(doc)}
                       className="font-medium text-gray-900 hover:text-blue-600 truncate block text-left w-full"
                     >
                       {doc.nombre}
@@ -517,6 +678,16 @@ export default function CarpetasDocumentos({ expedienteId }: { expedienteId: str
           )}
         </div>
       </div>
+
+      {viewingDoc && (
+        <DocumentoViewer
+          isOpen={true}
+          onClose={() => setViewingDoc(null)}
+          nombre={viewingDoc.nombre}
+          storagePath={viewingDoc.storage_path ?? ''}
+          tipoMime={viewingDoc.tipo ?? null}
+        />
+      )}
     </div>
   );
 }
