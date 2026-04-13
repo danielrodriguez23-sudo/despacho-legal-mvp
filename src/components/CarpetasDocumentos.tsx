@@ -20,7 +20,7 @@ interface Documento {
   created_at: string;
 }
 
-export default function CarpetasDocumentos({ expedienteId }: { expedienteId: string }) {
+export default function CarpetasDocumentos({ expedienteId, clienteId }: { expedienteId: string; clienteId: string | null }) {
   const [carpetas, setCarpetas] = useState<Carpeta[]>([]);
   const [documentos, setDocumentos] = useState<Documento[]>([]);
   const [searchTerm, setSearchTerm] = useState('');
@@ -159,6 +159,7 @@ export default function CarpetasDocumentos({ expedienteId }: { expedienteId: str
 
       const { error: dbError } = await supabase.from('documentos').insert({
         expediente_id: expedienteId,
+        cliente_id: clienteId,
         carpeta_id: carpetaId,
         nombre: file.name,
         storage_path: filePath,
@@ -219,6 +220,7 @@ export default function CarpetasDocumentos({ expedienteId }: { expedienteId: str
 
             const { error: dbErr } = await supabase.from('documentos').insert({
               expediente_id: expedienteId,
+              cliente_id: clienteId,
               carpeta_id: carpetaData.id,
               nombre: file.name,
               storage_path: filePath,
@@ -335,7 +337,7 @@ export default function CarpetasDocumentos({ expedienteId }: { expedienteId: str
                 const { error: upErr } = await supabase.storage.from('Documentos').upload(filePath, file);
                 if (upErr) throw upErr;
                 const { error: dbErr } = await supabase.from('documentos').insert({
-                  expediente_id: expedienteId, carpeta_id: carpetaData.id,
+                  expediente_id: expedienteId, cliente_id: clienteId, carpeta_id: carpetaData.id,
                   nombre: file.name, storage_path: filePath,
                   tipo_mime: file.type || null, tamanio_bytes: file.size,
                 });
@@ -353,7 +355,7 @@ export default function CarpetasDocumentos({ expedienteId }: { expedienteId: str
               const { error: upErr } = await supabase.storage.from('Documentos').upload(filePath, file);
               if (upErr) throw upErr;
               const { error: dbErr } = await supabase.from('documentos').insert({
-                expediente_id: expedienteId, carpeta_id: selectedCarpeta,
+                expediente_id: expedienteId, cliente_id: clienteId, carpeta_id: selectedCarpeta,
                 nombre: file.name, storage_path: filePath,
                 tipo_mime: file.type || null, tamanio_bytes: file.size,
               });
@@ -371,7 +373,7 @@ export default function CarpetasDocumentos({ expedienteId }: { expedienteId: str
             const { error: upErr } = await supabase.storage.from('Documentos').upload(filePath, file);
             if (upErr) throw upErr;
             const { error: dbErr } = await supabase.from('documentos').insert({
-              expediente_id: expedienteId, carpeta_id: selectedCarpeta,
+              expediente_id: expedienteId, cliente_id: clienteId, carpeta_id: selectedCarpeta,
               nombre: file.name, storage_path: filePath,
               tipo_mime: file.type || null, tamanio_bytes: file.size,
             });
@@ -660,6 +662,7 @@ export default function CarpetasDocumentos({ expedienteId }: { expedienteId: str
                     onChange={(e) => moveDocumento(doc.id, e.target.value || null)}
                     className="px-3 py-1 border border-gray-300 rounded text-sm"
                   >
+                    <option value="">Sin carpeta</option>
                     {carpetas.map((carpeta) => (
                       <option key={carpeta.id} value={carpeta.id}>
                         {carpeta.nombre}

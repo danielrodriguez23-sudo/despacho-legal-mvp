@@ -302,7 +302,7 @@ export default function ExpedienteDetalle() {
       </div>
 
       <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-6">
-        <CarpetasDocumentos expedienteId={expediente.id} />
+        <CarpetasDocumentos expedienteId={expediente.id} clienteId={expediente.clientes?.id ?? null} />
       </div>
 
       <ExpedienteDialog
