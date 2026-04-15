@@ -1,7 +1,14 @@
 import { useState, useEffect } from 'react';
 import { supabase } from '../lib/supabase';
-import { Folder, Plus, Search, Upload, File, Trash2, Edit2, FolderUp } from 'lucide-react';
+import { Folder, Plus, Search, Upload, File, Trash2, Edit2, FolderUp, Cloud, CloudOff } from 'lucide-react';
 import DocumentoViewer from './documentos/DocumentoViewer';
+import { useGoogleDrive } from '../contexts/GoogleDriveContext';
+import {
+  getBackupRootFolder,
+  getExpedienteFolder,
+  findOrCreateFolder,
+  uploadFileToDrive,
+} from '../utils/googleDrive';
 
 interface Carpeta {
   id: string;
@@ -20,7 +27,14 @@ interface Documento {
   created_at: string;
 }
 
-export default function CarpetasDocumentos({ expedienteId, clienteId }: { expedienteId: string; clienteId: string | null }) {
+interface CarpetasDocumentosProps {
+  expedienteId: string;
+  clienteId: string | null;
+  numeroExpediente: string;
+  tituloExpediente: string;
+}
+
+export default function CarpetasDocumentos({ expedienteId, clienteId, numeroExpediente, tituloExpediente }: CarpetasDocumentosProps) {
   const [carpetas, setCarpetas] = useState<Carpeta[]>([]);
   const [documentos, setDocumentos] = useState<Documento[]>([]);
   const [searchTerm, setSearchTerm] = useState('');
@@ -32,6 +46,30 @@ export default function CarpetasDocumentos({ expedienteId, clienteId }: { expedi
   const [editNombre, setEditNombre] = useState('');
   const [viewingDoc, setViewingDoc] = useState<Documento | null>(null);
   const [isDragging, setIsDragging] = useState(false);
+  const [driveStatus, setDriveStatus] = useState<string | null>(null);
+  const { isConnected: isDriveConnected, connect: connectDrive, disconnect: disconnectDrive } = useGoogleDrive();
+
+  // Helper: backup a file to Google Drive (fire-and-forget, no blocking)
+  const backupToDrive = async (file: File, carpetaNombre?: string) => {
+    if (!isDriveConnected) return;
+    try {
+      setDriveStatus('Sincronizando con Drive...');
+      const rootId = await getBackupRootFolder();
+      const expFolderId = await getExpedienteFolder(rootId, numeroExpediente, tituloExpediente);
+      let targetFolderId = expFolderId;
+      if (carpetaNombre) {
+        targetFolderId = await findOrCreateFolder(carpetaNombre, expFolderId);
+      }
+      await uploadFileToDrive(file, targetFolderId);
+      setDriveStatus('✓ Backup en Drive completado');
+      setTimeout(() => setDriveStatus(null), 3000);
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : String(err);
+      console.error('[GoogleDrive] Backup error:', msg, err);
+      setDriveStatus(`⚠ Drive: ${msg}`);
+      setTimeout(() => setDriveStatus(null), 8000);
+    }
+  };
 
   useEffect(() => {
     loadCarpetas();
@@ -168,6 +206,10 @@ export default function CarpetasDocumentos({ expedienteId, clienteId }: { expedi
       });
       if (dbError) throw dbError;
 
+      // Backup a Google Drive
+      const carpetaNombre = carpetaId ? carpetas.find(c => c.id === carpetaId)?.nombre : undefined;
+      backupToDrive(file, carpetaNombre);
+
       loadDocumentos();
       alert('Documento subido correctamente');
     } catch (error) {
@@ -228,6 +270,10 @@ export default function CarpetasDocumentos({ expedienteId, clienteId }: { expedi
               tamanio_bytes: file.size,
             });
             if (dbErr) throw dbErr;
+
+            // Backup a Drive
+            backupToDrive(file, nombreCarpeta);
+
             okCount++;
           } catch (err) {
             console.error('Error subiendo archivo:', file.name, err);
@@ -342,6 +388,7 @@ export default function CarpetasDocumentos({ expedienteId, clienteId }: { expedi
                   tipo_mime: file.type || null, tamanio_bytes: file.size,
                 });
                 if (dbErr) throw dbErr;
+                backupToDrive(file, entry.name);
                 okCount++;
               } catch { errCount++; }
             }
@@ -360,6 +407,8 @@ export default function CarpetasDocumentos({ expedienteId, clienteId }: { expedi
                 tipo_mime: file.type || null, tamanio_bytes: file.size,
               });
               if (dbErr) throw dbErr;
+              const carpetaNombre = selectedCarpeta ? carpetas.find(c => c.id === selectedCarpeta)?.nombre : undefined;
+              backupToDrive(file, carpetaNombre);
               okCount++;
             } catch { errCount++; }
           }
@@ -378,6 +427,8 @@ export default function CarpetasDocumentos({ expedienteId, clienteId }: { expedi
               tipo_mime: file.type || null, tamanio_bytes: file.size,
             });
             if (dbErr) throw dbErr;
+            const carpetaNombre = selectedCarpeta ? carpetas.find(c => c.id === selectedCarpeta)?.nombre : undefined;
+            backupToDrive(file, carpetaNombre);
             okCount++;
           } catch { errCount++; }
         }
@@ -455,6 +506,32 @@ export default function CarpetasDocumentos({ expedienteId, clienteId }: { expedi
           </div>
         </div>
       )}
+      {/* Google Drive status bar */}
+      <div className="flex items-center justify-between">
+        <div className="flex items-center gap-2">
+          {isDriveConnected ? (
+            <button
+              onClick={disconnectDrive}
+              className="flex items-center gap-2 px-3 py-1.5 text-sm bg-green-50 text-green-700 border border-green-200 rounded-lg hover:bg-green-100"
+            >
+              <Cloud className="h-4 w-4" />
+              Drive conectado
+            </button>
+          ) : (
+            <button
+              onClick={connectDrive}
+              className="flex items-center gap-2 px-3 py-1.5 text-sm bg-gray-50 text-gray-600 border border-gray-200 rounded-lg hover:bg-gray-100"
+            >
+              <CloudOff className="h-4 w-4" />
+              Conectar Google Drive
+            </button>
+          )}
+          {driveStatus && (
+            <span className="text-xs text-gray-500 animate-pulse">{driveStatus}</span>
+          )}
+        </div>
+      </div>
+
       <div className="flex gap-4 items-center">
         <div className="flex-1 relative">
           <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 h-5 w-5" />
