@@ -64,7 +64,7 @@ export default function Expedientes() {
       .select(
         "id, numero_expediente, cliente_id, titulo, materia, tipo_procedimiento, juzgado, numero_procedimiento, parte_contraria, abogado_contrario, estado, fecha_inicio, fecha_cierre, descripcion, clientes(id, nombre, apellidos)"
       )
-      .order("fecha_inicio", { ascending: false });
+      .order("numero_expediente", { ascending: true });
 
     if (error) setError(error.message);
     else setRows((data ?? []) as unknown as ExpedienteRow[]);
