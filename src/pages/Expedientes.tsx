@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import { useNavigate } from "react-router-dom";
+import { useNavigate, useLocation } from "react-router-dom";
 import { Plus, Search, Pencil, Trash2, FolderOpen } from "lucide-react";
 import { supabase } from "../lib/supabase";
 import ExpedienteDialog from "../components/expedientes/ExpedienteDialog";
@@ -45,6 +45,7 @@ const formatDate = (iso: string | null) => {
 
 export default function Expedientes() {
   const navigate = useNavigate();
+  const location = useLocation();
   const [rows, setRows] = useState<ExpedienteRow[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -55,6 +56,19 @@ export default function Expedientes() {
 
   const [dialogOpen, setDialogOpen] = useState(false);
   const [editingId, setEditingId] = useState<string | undefined>(undefined);
+  const [initialClienteId, setInitialClienteId] = useState<string | undefined>(undefined);
+
+  // Abrir dialog pre-seleccionando cliente cuando se navega desde conversión de lead
+  useEffect(() => {
+    const state = location.state as { abrirNuevoExpediente?: boolean; clienteId?: string } | null;
+    if (state?.abrirNuevoExpediente && state?.clienteId) {
+      setEditingId(undefined);
+      setInitialClienteId(state.clienteId);
+      setDialogOpen(true);
+      // Limpiar el state para que no se vuelva a abrir al navegar
+      window.history.replaceState({}, document.title);
+    }
+  }, [location.state]);
 
   const fetchExpedientes = async () => {
     setLoading(true);
@@ -115,12 +129,14 @@ export default function Expedientes() {
 
   const handleNew = () => {
     setEditingId(undefined);
+    setInitialClienteId(undefined);
     setDialogOpen(true);
   };
 
   const handleEdit = (e: React.MouseEvent, id: string) => {
     e.stopPropagation();
     setEditingId(id);
+    setInitialClienteId(undefined);
     setDialogOpen(true);
   };
 
@@ -283,6 +299,7 @@ export default function Expedientes() {
       <ExpedienteDialog
         isOpen={dialogOpen}
         expedienteId={editingId}
+        initialClienteId={initialClienteId}
         onClose={() => setDialogOpen(false)}
         onSaved={fetchExpedientes}
       />

@@ -13,6 +13,7 @@ import Documentos from "./pages/Documentos";
 import Facturas from "./pages/Facturas";
 import PagosEfectivo from "./pages/PagosEfectivo";
 import Perfil from "./pages/Perfil";
+import Leads from "./pages/Leads";
 
 function ProtectedRoute({ children }: { children: React.ReactNode }) {
   const { user, loading } = useAuth();
@@ -53,6 +54,7 @@ function App() {
             <Route path="documentos" element={<Documentos />} />
             <Route path="facturas" element={<Facturas />} />
             <Route path="pagos-efectivo" element={<PagosEfectivo />} />
+            <Route path="leads" element={<Leads />} />
             <Route path="perfil" element={<Perfil />} />
           </Route>
         </Routes>

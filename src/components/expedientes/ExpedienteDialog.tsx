@@ -6,6 +6,7 @@ interface ExpedienteDialogProps {
   onClose: () => void;
   onSaved: () => void;
   expedienteId?: string;
+  initialClienteId?: string;
 }
 
 type Estado = "abierto" | "cerrado" | "archivado";
@@ -45,6 +46,7 @@ export default function ExpedienteDialog({
   onClose,
   onSaved,
   expedienteId,
+  initialClienteId,
 }: ExpedienteDialogProps) {
   const [formData, setFormData] = useState(emptyForm());
   const [clientes, setClientes] = useState<ClienteOption[]>([]);
@@ -103,9 +105,9 @@ export default function ExpedienteDialog({
           }
         });
     } else {
-      setFormData(emptyForm());
+      setFormData({ ...emptyForm(), cliente_id: initialClienteId ?? "" });
     }
-  }, [isOpen, expedienteId]);
+  }, [isOpen, expedienteId, initialClienteId]);
 
   if (!isOpen) return null;
 
