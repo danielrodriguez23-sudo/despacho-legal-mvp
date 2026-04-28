@@ -68,7 +68,7 @@ export default function Sidebar() {
               >
                 <item.icon className="w-5 h-5 flex-shrink-0" />
                 <span className="flex-1">{item.label}</span>
-                {"badge" in item && item.badge > 0 && (
+                {"badge" in item && item.badge !== undefined && item.badge > 0 && (
                   <span className="ml-auto bg-red-500 text-white text-xs font-bold rounded-full min-w-[20px] h-5 flex items-center justify-center px-1.5">
                     {item.badge > 99 ? "99+" : item.badge}
                   </span>
